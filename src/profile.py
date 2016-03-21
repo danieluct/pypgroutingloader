@@ -28,6 +28,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 """
 
 # Car profile
+import logging
 from util.tag_utils import find_access_tag, is_not_empty
 from util.duration import parse_duration
 from util.config import NUMBER_MATCHER, MPH_MATCHER, SPEED_CONSTANTS_MATCHER
@@ -342,7 +343,7 @@ def way_function(way,debug=False):
         result.backward_speed = min(result.backward_speed, max_speed)
 
     if -1 == result.forward_speed and -1 == result.backward_speed:
-        print "ERROR: access utterly forbidden"
+        logging.warn("ERROR: access utterly forbidden")
         return
 
     # reduce speed on special side roads

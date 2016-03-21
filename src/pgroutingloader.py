@@ -19,15 +19,19 @@ import argparse
 import logging
 import time
 import warnings
+import sys
 
 import ConfigParser
+
+from os.path import exists
+from util.dbwriter import test_connection
 
 IMPOSM_PRESENT = False
 
 import xml.etree.cElementTree as ET
 try:
     from imposm.parser import OSMParser
-    imposm_available = True
+    IMPOSM_PRESENT = True
 except ImportError:
     warnings.warn("imposm.parser library not found. Will use XML parser") 
     
@@ -37,7 +41,7 @@ from OSMEntities.Objects import RoutingRestriction, RoutingNode, RoutingWay, \
 import util.config as utils
 from util import dbwriter
 from util.config import SURE_AREA, BOTH_WAYS, ONEWAY_FORWARD, ONEWAY_BACKWARD,\
-    load_connection_info_from_config
+    load_connection_info_from_config, load_connection_info_from_gdal_string
 from util.tag_utils import read_tags_from_osm_node
 from util.synchronizedregistry import SynchronizedRegistry
 
@@ -59,7 +63,7 @@ class NodeProcessor(object):
     def __init__(self, node_collection):
         self.nodes = SynchronizedRegistry()
         self.node_set = set(node_collection)
-        print "Nodes to read", len(self.node_set)
+        logging.info("Nodes to read: %s"%(len(self.node_set),))
         
     def process_node_element(self, elem, use_imposm=False):
         guid = elem[0] if use_imposm else int(elem.get('id'))
@@ -102,7 +106,7 @@ class NetworkProcessor(object):
                         
             barrier_cost = self.const.get_barrier_cost(keyval)
             if barrier_cost is None:
-                print "WARNING: Unknown barrier value", keyval['barrier'], "for node", guid
+                logging.warn("Unknown barrier value %s for node %s"%(keyval['barrier'],guid))
                 del keyval
                 return
             
@@ -150,7 +154,7 @@ class NetworkProcessor(object):
                     if node_type == 'way':
                         temp_restriction.add_end_member(node_role, node_ref)                   
                     elif node_type == 'node':
-                        print "ERROR: Found node as end member in restriction", guid
+                        logging.warn("ERROR: Found node as end member in restriction %s"%(guid,))
                 elif node_role == 'via':
                     if node_type == 'way':
                         temp_restriction.add_via_member(node_type, node_ref)
@@ -164,16 +168,16 @@ class NetworkProcessor(object):
                 if not self.const.is_excepted(tags):
                     actual_restriction = self.const.get_actual_restriction_type(tags)
                     if actual_restriction is None:
-                        print "restriction not applicable", guid
+                        logging.warn("restriction not applicable %s"%(guid,))
                     elif (actual_restriction == 'no_u_turn' 
                           and len(temp_restriction.get_common_ends()) > 0):
-                        print "WARNING: no_u_turn restriction with common from and to", guid
+                        logging.warn("no_u_turn restriction with common from and to %s"%(guid,))
                     else:
                         temp_restriction.get_properties()['restriction'] = actual_restriction
                         self.relation_restrictions.set(guid, temp_restriction)
                         return
                 else:
-                    print "excepted restriction", guid, "; except tag was", tags['except']
+                    logging.warn("excepted restriction %s; except tag was %s"%(guid, tags['except']))
             del temp_restriction
             del members
             del tags
@@ -214,19 +218,18 @@ class NetworkProcessor(object):
                             last = node
                             useful_nodes.append(node)
                         else:
-                            print "multiple successive appearances of node", node, "on way", guid
+                            logging.warn("multiple successive appearances of node %s on way %s"%(node,guid))
  
                     if  len(useful_nodes) < 2:
-                        print "way", guid, "has only one distinct node"
+                        logging.warn("way %s has only one distinct node"%(guid,))
                     else:
                         way = RoutingWay(guid)
                                                
                         try:
                             profile_result = way_function(tags)
                         except Exception:
-                            print "ERROR: error profiling way", guid
+                            logging.warn("ERROR: error profiling way %s"%(guid,))
                             way_function(tags, True)
-                            print "-----"
                             profile_result = None
                         
                         # way.oneway = self.const.get_Direction(tags)
@@ -242,7 +245,7 @@ class NetworkProcessor(object):
                             elif profile_result.backward_mode > 0:
                                 way.oneway = ONEWAY_BACKWARD
                             else:
-                                print "ERROR: unaccesible way", guid
+                                logging.warn("unaccesible way %s"%(guid,))
                             
                             if profile_result.duration > 0:
                                 way.duration = profile_result.duration                            
@@ -259,11 +262,11 @@ class NetworkProcessor(object):
                             
                             self.ways.set(guid, way)
                         else:
-                            print "WARNING: profile rejected way", guid
+                            logging.warn("profile rejected way %s"%(guid,))
                             del way
                         
                 elif access != 'no':
-                    print "WARNING: ignoring way", guid, "because actual access is", access
+                    logging.warn("ignoring way %s because actual access is %s"%(guid,access))
         del nodez
         del tags
     
@@ -310,7 +313,8 @@ class NetworkProcessor(object):
             restriction = self.relation_restrictions[key]
             actually_valid = restriction.validate_ways(self.ways)
             if not actually_valid:
-                print "WARNING: deleting restriction relation", key, "between unroutable ways"
+                logging.warn("deleting restriction relation %s between unroutable ways"
+                             %(key,))
                 del self.relation_restrictions[key]
           
         restriction_keys = self.barrier_restrictions.keys()      
@@ -318,18 +322,18 @@ class NetworkProcessor(object):
             restriction = self.barrier_restrictions[key]
             actually_valid = restriction.validate_ways(self.ways)
             if not actually_valid:
-                print "WARNING: deleting barrier restriction", key, "on unroutable way(s)"
+                logging.warn("deleting barrier restriction %s on unroutable way(s)"
+                              %(key,))
                 del self.barrier_restrictions[key]            
 
 
-osm_filepath = r'E:\Data\romania-latest.osm' 
-pbf_filepath = r"E:\Data\romania-latest.osm.pbf"   
-def run(target_db, file_path=pbf_filepath, use_imposm=True):
+ 
+def run(target_db, file_path, length_projection,
+        use_imposm=True, clean_db=True, table_prefix=''):    
     
+    logging.info("parsing osm file "+file_path)
     
-    print "parsing osm", time.ctime()
-    const = utils.Configuration()
-    
+    const = utils.Configuration()    
     processor = NetworkProcessor(const)
     
     if use_imposm:
@@ -349,21 +353,21 @@ def run(target_db, file_path=pbf_filepath, use_imposm=True):
                 elem.clear()
                 proc_nodes += 1
                 if proc_nodes % 50000 == 0:
-                    logging.debug("processed %s nodes... %s" 
+                    logging.debug("processed %s nodes" 
                                   % (proc_nodes,))    
             elif elem.tag == "way":
                 processor.process_way_element(elem)
                 elem.clear() 
                 proc_ways += 1
                 if proc_ways % 10000 == 0:
-                    logging.debug("processed %s ways... %s" 
+                    logging.debug("processed %s ways" 
                                   % (proc_ways,))                                   
             elif elem.tag == "relation":
                 processor.process_relation_element(elem)
                 elem.clear()
                 proc_rel += 1
                 if proc_rel % 1000 == 0:
-                    logging.debug("processed %s rel... %s" 
+                    logging.debug("processed %s relations" 
                                   % (proc_rel,))
             root.clear()
         del root, context
@@ -371,7 +375,7 @@ def run(target_db, file_path=pbf_filepath, use_imposm=True):
     
     edge_id_generator = db_id_generator()
     processor.normalize_network(edge_id_generator)
-    print "network normalized", time.ctime()
+    logging.info("network normalized")
     
     node_processor = NodeProcessor(processor.get_used_node_ids())
     if use_imposm: 
@@ -389,27 +393,27 @@ def run(target_db, file_path=pbf_filepath, use_imposm=True):
                 elem.clear()
                 proc_nodes += 1
                 if proc_nodes % 50000 == 0:
-                    print "processed", proc_nodes, "nodes...", time.ctime()
+                    logging.debug("processed %s nodes..." % (proc_nodes,))
             elif elem.tag in ('way', 'relation'):
                 elem.clear()
             root.clear()
         del root, context
-    print "nodes done read", time.ctime()
+    logging.info("nodes done read")
 
-    db_writer = dbwriter(target_db)
+    db_writer = dbwriter.DbWriter(target_db, table_prefix=table_prefix)
 
-    db_writer.init_db()   
+    db_writer.init_db(clean=clean_db)   
     for node in processor.nodes.values():
         db_writer.insert_node(node, node_processor.nodes.get(node.get_id()))
     db_writer.flush_caches()
-    print "nodes loaded", time.ctime() 
+    logging.info("nodes loaded")
     
     for way in processor.ways.values():
         for segment in way.get_segments():
             db_writer.insert_way(segment, node_processor.get_node_coordinates())
         db_writer.insert_way_properties(way)
     db_writer.flush_caches()
-    print "ways loaded", time.ctime() 
+    logging.info("ways loaded")
 
     proper_restrictions_by_source = {}
     
@@ -454,7 +458,7 @@ def run(target_db, file_path=pbf_filepath, use_imposm=True):
                     explicit_no.add(val.to_segm.get_db_id())
                     db_writer.insert_restriction(val)
                 if  val._type == 'barrier':
-                    print "WARNING: barrier", val.via_node, "on only_* restriction"
+                    logging.warn("barrier %s on only_* restriction",(val.via_node,))
             block_routes = block_routes.difference(explicit_no)
                     
             pivot = only_restrictions[0]
@@ -475,32 +479,86 @@ def run(target_db, file_path=pbf_filepath, use_imposm=True):
             for val in value:
                 if val._type == 'barrier':
                     if has_explicit_no:
-                        print "WARNING: barrier".val.via_node, "on no_* restriction"
+                        logging.warn(" barrier %s on no_* restriction",(val.via_node,))
                     db_writer.insert_restriction(val)
 
 
-    print "restrictions loaded", time.ctime() 
+    logging.info("restrictions loaded") 
    
-    db_writer.rebuild_topology()
-    print "tobology rebuild", time.ctime() 
-
-
+    db_writer.rebuild_topology(epsg_projection=length_projection)
+    logging.info("topology rebuilt")
 
     db_writer.close()
-    print "db written", time.ctime()
+    logging.info("db written")
     
-    
+
 if __name__ == '__main__':
     config = ConfigParser.ConfigParser()
     config.read(['connection.cfg'])
-    connection_info = load_connection_info_from_config(config)
+    backup_connection_info = load_connection_info_from_config(config)
+    logging.getLogger().setLevel(logging.INFO)
     
     parser = argparse.ArgumentParser(description=('Load OpenStreetMap dump '
                                                   +'into pgRouting database.'))
-    parser.add_argument('integers', metavar='N', type=int, nargs='+',
-                   help='an integer for the accumulator')
-    parser.add_argument('--sum', dest='accumulate', action='store_const',
-                   const=sum, default=max,
-                   help='sum the integers (default: find the max)')
+    parser.add_argument('--file', '-f', type=str, 
+                        dest='input_file',
+                        required=True,
+                        help=('OSM dump (either xml or pbf). Loading from pbf '
+                              +'is allowed only if imposm.parser is available '
+                              +'on the system'))    
+    parser.add_argument('--use-imposm', '-b', dest='use_imposm',
+                        action='store_true',
+                        help=('Use the imposm.parser for parsing xml files'))    
+    parser.add_argument('--connection-string', '-c', type=str, 
+                        dest='gdal_string', required=False,
+                        help=('GDAL connection string for the database where '+
+                              'the data is to be loaded. If not present, will '+
+                              'use info from connection.cfg'))
+    parser.add_argument('--clean', '-d', action='store_true',
+                        dest='clean_db', 
+                        help=('Clear all data in the database before '+
+                              'loading anything from the dump'))
+    parser.add_argument('--prefix-tables', '-p', type=str, 
+                        dest='prefix', default='',required=False,
+                        help=('Prefix to use for loaded tables'))
+    parser.add_argument('--lenght-projection', '-e', type=str, 
+                        dest='epsg_code', default='',required=True,
+                        help=('EPSG of projection to use to compute way length'))
+    args = parser.parse_args()
     
-    run(connection_info)
+    if args.gdal_string is None:
+        if backup_connection_info[1]:
+            logging.error("GDAL connection string not present and configuration "
+                          +"file is missing the following keywords:"
+                          + ','.join(backup_connection_info[1]))
+            sys.exit(1)
+        else:
+            connection_info = backup_connection_info[0]
+    else:
+        connection_info = load_connection_info_from_gdal_string(args.gdal_string)
+        
+    if connection_info is None:
+        logging.error("Unable to read db connection info. Format should be: "
+                      +"PG:\"dbname='databasename' host='addr' port='5432' "+
+                      +"user='x' password='y'\"")
+        sys.exit(1)
+    
+    error=test_connection(connection_info)
+    if error is not None:
+        logging.error("Unable to open connection to target db. Exception was: "+
+                      error)
+        sys.exit(1)
+
+    if not exists(args.input_file):
+        logging.error("Input file not found: "+args.input_file)
+        sys.exit(1)
+        
+    if args.input_file.endswith('.pbf') and not IMPOSM_PRESENT:
+        logging.error("Unable to parse pbf file as imposm.parser is not available")
+        sys.exit(1)
+        
+
+    run(connection_info, args.input_file, 
+        args.epsg_code,
+        use_imposm=args.use_imposm, clean_db=args.clean_db, 
+        table_prefix=args.prefix)

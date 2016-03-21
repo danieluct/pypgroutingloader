@@ -162,25 +162,16 @@ class DbWriter(object):
         cursor.execute('CREATE INDEX to_way_fk_idx ON {0}restrictions USING btree(to_way);'.format(self.table_prefix))
         cursor.close()
         
-    def setup_ways(self, epsg_projection='3844'):
-        connection = self._get_connection()
-        cursor = connection.cursor()
-        cursor.execute(('UPDATE {0}ways as w SET x1=n.lon, y1=n.lat ' + 
-                            'FROM {0}nodes as n WHERE w.from_osm_id=n.osm_id').format(self.table_prefix))
-        cursor.execute(('UPDATE {0}ways as w SET x2=n.lon, y2=n.lat ' + 
-                            'FROM {0}nodes as n WHERE w.to_osm_id=n.osm_id').format(self.table_prefix))
-        cursor.execute(('UPDATE {0}ways SET projected_length=ST_Length(ST_Transform(geom,{1}))').format(self.table_prefix,
-                                                                                                        epsg_projection))
-        
-    def init_db(self):
-        self._clean_db()
+    def init_db(self, clean=True):
+        if clean:
+            self._clean_db()
         self._init_pgrouting()
         self._create_ways_table()
         self._create_nodes_table()
         self._create_way_properties_table()
         self._create_restrictions_table()
         
-    def rebuild_topology(self):
+    def rebuild_topology(self, epsg_projection='3844'):
         self.flush_caches()
         connection = self._get_connection()
         cursor = connection.cursor()
@@ -190,7 +181,7 @@ class DbWriter(object):
         cursor.execute(("UPDATE {0}ways as w SET x2=n.lon, y2=n.lat " + 
                        "FROM {0}nodes as n WHERE w.to_osm_id=n.osm_id;").format(self.table_prefix))
         cursor.execute(("UPDATE {0}ways " + 
-                       "SET projected_length=ST_Length(ST_Transform(geom,3844));").format(self.table_prefix))
+                       "SET projected_length=ST_Length(ST_Transform(geom,{1}));").format(self.table_prefix,epsg_projection))
         cursor.execute(("UPDATE {0}ways " + 
                        "SET f_cost=(CASE WHEN oneway='TF' THEN -1 ELSE (projected_length*3.6)/maxspeed_forward END), " + 
                        "r_cost=(CASE WHEN oneway='FT' THEN -1 ELSE (projected_length*3.6)/maxspeed_backward END)" + 
@@ -283,3 +274,11 @@ class DbWriter(object):
                              
     def set_node_dictionary(self, nodes):
         self.nodes = nodes
+
+def test_connection(connection_properties):
+    try:
+        connection = psycopg2.connect(**connection_properties)
+        connection.close()
+    except Exception as e:
+        return str(e)
+    return None

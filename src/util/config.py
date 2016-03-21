@@ -17,6 +17,10 @@
 import re
 import os.path
 
+REQUIRED_CONNECTION_PROPERTIES = set(['host','port','database','user',
+                                      'password'])
+GDAL_CONNECTION_PROP_MAP = {'host':'','port':'','dbname':'database','user':'',
+                                      'password':''}
 FALSE_VALUES_SET = set(['0', 'false', 'no'])
 TRUE_VALUES_SET = set(['1', 'true', 'yes'])
 REVERSE_VALUES_SET = set(['-1', 'reverse'])
@@ -434,3 +438,41 @@ class Speeds(object):
         if len(max_speeds) > 1:
             print orig_speed_str, ">", max_speeds
         return min(max_speeds)
+
+def load_connection_info_from_config(config):
+    missing_keys=[]
+    section = 'Target Postgres'
+    connection_info = { 'host':'localhost',
+                       'port':5432,
+                       'user':'postgres',
+                       'password':'postgres'}
+    if config.has_section(section):        
+        for key in REQUIRED_CONNECTION_PROPERTIES:
+            try:
+                connection_info[key] = config.get(section,key)
+            except Exception as e:
+                print e
+                missing_keys.append(key)
+    return (connection_info,missing_keys)
+
+def load_connection_info_from_gdal_string(gdal_string):
+    connection_info = { 'host':'localhost',
+                   'port':5432,
+                   'user':'postgres',
+                   'password':'postgres'}
+    if gdal_string.startswith('PG:'):
+        gdal_string = gdal_string[4:-1]
+        
+    if not gdal_string:
+        return None
+    properties = dict([_property.split('=') 
+                       for _property in gdal_string.split(' ')])
+    
+    for key in GDAL_CONNECTION_PROP_MAP.keys():
+        if properties.has_key(key):
+            if not GDAL_CONNECTION_PROP_MAP[key]:
+                connection_info[key]=properties[key].strip("'")
+            else:
+                connection_info[GDAL_CONNECTION_PROP_MAP[key]]=properties[key].strip("'")       
+    
+    return connection_info
