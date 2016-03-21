@@ -3,13 +3,19 @@
 pypgroutingloader is a Python package for loading an OpenStreetMap dump into a pgRouting-enabled database, preserving most routing restrictions present in the original dataset.
 
 ## Usage
+
+```
 pgroutingloader.py [-h] --file INPUT_FILE [--use-imposm]
                           [--connection-string GDAL_STRING] [--clean]
                           [--prefix-tables PREFIX] --lenght-projection EPSG_CODE
+                          
+
 
 Load OpenStreetMap dump into pgRouting database.
 
 optional arguments:
+
+
   -h, --help            show this help message and exit
   --file INPUT_FILE, -f INPUT_FILE
                         OSM dump (either xml or pbf). Loading from pbf is
@@ -27,6 +33,9 @@ optional arguments:
   --lenght-projection EPSG_CODE, -e EPSG_CODE
                         EPSG of projection to use to compute way length
 
+```
 ##Example run 
 (using connection info from connection.cfg and EPSG:3844 for computing lenghts)
+
+```
 pgroutingloader.py -f E:\Data\romania-latest.osm.pbf -d -b -e 3844
