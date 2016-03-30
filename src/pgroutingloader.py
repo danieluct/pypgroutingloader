@@ -40,9 +40,9 @@ from OSMEntities.Objects import RoutingRestriction, RoutingNode, RoutingWay, \
     ProperRestriction
 import util.config as utils
 from util import dbwriter
-from util.config import SURE_AREA, BOTH_WAYS, ONEWAY_FORWARD, ONEWAY_BACKWARD,\
+from util.config import SURE_AREA, BOTH_WAYS, ONEWAY_FORWARD, ONEWAY_BACKWARD, \
     load_connection_info_from_config, load_connection_info_from_gdal_string
-from util.tag_utils import read_tags_from_osm_node
+from util.tag_utils import read_tags_from_osm_node, is_not_empty
 from util.synchronizedregistry import SynchronizedRegistry
 
 from profile import way_function
@@ -63,7 +63,7 @@ class NodeProcessor(object):
     def __init__(self, node_collection):
         self.nodes = SynchronizedRegistry()
         self.node_set = set(node_collection)
-        logging.info("Nodes to read: %s"%(len(self.node_set),))
+        logging.info("Nodes to read: %s" % (len(self.node_set),))
         
     def process_node_element(self, elem, use_imposm=False):
         guid = elem[0] if use_imposm else int(elem.get('id'))
@@ -106,7 +106,7 @@ class NetworkProcessor(object):
                         
             barrier_cost = self.const.get_barrier_cost(keyval)
             if barrier_cost is None:
-                logging.warn("Unknown barrier value %s for node %s"%(keyval['barrier'],guid))
+                logging.warn("Unknown barrier value %s for node %s" % (keyval['barrier'], guid))
                 del keyval
                 return
             
@@ -154,7 +154,7 @@ class NetworkProcessor(object):
                     if node_type == 'way':
                         temp_restriction.add_end_member(node_role, node_ref)                   
                     elif node_type == 'node':
-                        logging.warn("ERROR: Found node as end member in restriction %s"%(guid,))
+                        logging.warn("ERROR: Found node as end member in restriction %s" % (guid,))
                 elif node_role == 'via':
                     if node_type == 'way':
                         temp_restriction.add_via_member(node_type, node_ref)
@@ -168,16 +168,16 @@ class NetworkProcessor(object):
                 if not self.const.is_excepted(tags):
                     actual_restriction = self.const.get_actual_restriction_type(tags)
                     if actual_restriction is None:
-                        logging.warn("restriction not applicable %s"%(guid,))
+                        logging.warn("restriction not applicable %s" % (guid,))
                     elif (actual_restriction == 'no_u_turn' 
                           and len(temp_restriction.get_common_ends()) > 0):
-                        logging.warn("no_u_turn restriction with common from and to %s"%(guid,))
+                        logging.warn("no_u_turn restriction with common from and to %s" % (guid,))
                     else:
                         temp_restriction.get_properties()['restriction'] = actual_restriction
                         self.relation_restrictions.set(guid, temp_restriction)
                         return
                 else:
-                    logging.warn("excepted restriction %s; except tag was %s"%(guid, tags['except']))
+                    logging.warn("excepted restriction %s; except tag was %s" % (guid, tags['except']))
             del temp_restriction
             del members
             del tags
@@ -218,17 +218,17 @@ class NetworkProcessor(object):
                             last = node
                             useful_nodes.append(node)
                         else:
-                            logging.warn("multiple successive appearances of node %s on way %s"%(node,guid))
+                            logging.warn("multiple successive appearances of node %s on way %s" % (node, guid))
  
                     if  len(useful_nodes) < 2:
-                        logging.warn("way %s has only one distinct node"%(guid,))
+                        logging.warn("way %s has only one distinct node" % (guid,))
                     else:
                         way = RoutingWay(guid)
                                                
                         try:
                             profile_result = way_function(tags)
                         except Exception:
-                            logging.warn("ERROR: error profiling way %s"%(guid,))
+                            logging.warn("ERROR: error profiling way %s" % (guid,))
                             way_function(tags, True)
                             profile_result = None
                         
@@ -245,13 +245,14 @@ class NetworkProcessor(object):
                             elif profile_result.backward_mode > 0:
                                 way.oneway = ONEWAY_BACKWARD
                             else:
-                                logging.warn("unaccesible way %s"%(guid,))
+                                logging.warn("unaccesible way %s" % (guid,))
                             
                             if profile_result.duration > 0:
                                 way.duration = profile_result.duration                            
                             way.f_speed = profile_result.forward_speed
                             way.b_speed = profile_result.backward_speed
-                            way.name = profile_result.name
+                            if is_not_empty(profile_result.name):
+                                tags['std_name'] = profile_result.name
                             way.set_attributes(self.const.get_useful_properties(tags))
                             
                             for node in useful_nodes:
@@ -262,11 +263,11 @@ class NetworkProcessor(object):
                             
                             self.ways.set(guid, way)
                         else:
-                            logging.warn("profile rejected way %s"%(guid,))
+                            logging.warn("profile rejected way %s" % (guid,))
                             del way
                         
                 elif access != 'no':
-                    logging.warn("ignoring way %s because actual access is %s"%(guid,access))
+                    logging.warn("ignoring way %s because actual access is %s" % (guid, access))
         del nodez
         del tags
     
@@ -314,7 +315,7 @@ class NetworkProcessor(object):
             actually_valid = restriction.validate_ways(self.ways)
             if not actually_valid:
                 logging.warn("deleting restriction relation %s between unroutable ways"
-                             %(key,))
+                             % (key,))
                 del self.relation_restrictions[key]
           
         restriction_keys = self.barrier_restrictions.keys()      
@@ -323,7 +324,7 @@ class NetworkProcessor(object):
             actually_valid = restriction.validate_ways(self.ways)
             if not actually_valid:
                 logging.warn("deleting barrier restriction %s on unroutable way(s)"
-                              %(key,))
+                              % (key,))
                 del self.barrier_restrictions[key]            
 
 
@@ -331,13 +332,13 @@ class NetworkProcessor(object):
 def run(target_db, file_path, length_projection,
         use_imposm=True, clean_db=True, table_prefix=''):    
     
-    logging.info("parsing osm file "+file_path)
+    logging.info("parsing osm file " + file_path)
     
     const = utils.Configuration()    
     processor = NetworkProcessor(const)
     
     if use_imposm:
-        parser = OSMParser(ways_callback=processor.process_ways,
+        parser = OSMParser(concurrency=4, ways_callback=processor.process_ways,
                       nodes_callback=processor.process_barriers,
                       relations_callback=processor.process_relations)
         parser.parse(file_path)
@@ -379,8 +380,9 @@ def run(target_db, file_path, length_projection,
     
     node_processor = NodeProcessor(processor.get_used_node_ids())
     if use_imposm: 
-        parser = OSMParser(coords_callback=node_processor.process_nodes)
-        parser.parse(r"E:\Data\romania-latest.osm.pbf")
+        parser = OSMParser(concurrency=4,
+                           coords_callback=node_processor.process_nodes)
+        parser.parse(file_path)
         del parser
     else:
         proc_nodes = 0
@@ -398,16 +400,17 @@ def run(target_db, file_path, length_projection,
                 elem.clear()
             root.clear()
         del root, context
-    logging.info("nodes done read")
+    logging.info("%s nodes done read" % (len(node_processor.get_node_coordinates().keys()),))
 
     db_writer = dbwriter.DbWriter(target_db, table_prefix=table_prefix)
+
 
     db_writer.init_db(clean=clean_db)   
     for node in processor.nodes.values():
         db_writer.insert_node(node, node_processor.nodes.get(node.get_id()))
     db_writer.flush_caches()
     logging.info("nodes loaded")
-    
+
     for way in processor.ways.values():
         for segment in way.get_segments():
             db_writer.insert_way(segment, node_processor.get_node_coordinates())
@@ -456,31 +459,37 @@ def run(target_db, file_path, length_projection,
                 if (val.to_segm.get_db_id() in block_routes 
                     or val._type.startswith('no')):
                     explicit_no.add(val.to_segm.get_db_id())
-                    db_writer.insert_restriction(val)
+                    db_writer.insert_restriction(val, node_processor.get_node_coordinates())
                 if  val._type == 'barrier':
-                    logging.warn("barrier %s on only_* restriction",(val.via_node,))
+                    logging.warn("barrier %s on only_* restriction", (val.via_node,))
             block_routes = block_routes.difference(explicit_no)
                     
             pivot = only_restrictions[0]
             for segm in processor.nodes[node_id].get_edges():
-                if segm.get_db_id() in block_routes:
+                if (segm.get_db_id() in block_routes 
+                    and segm.get_db_id() != pivot.from_segm.get_db_id()):
                     db_writer.insert_restriction(
                         ProperRestriction(pivot.from_segm, segm,
-                                          None, None,
-                                          pivot.parent_restriction))
+                                          node_id, None,
+                                          pivot.parent_restriction,
+                                          ),
+                        node_processor.get_node_coordinates()
+                        )
             # print "------"
         else:
             has_explicit_no = False
             for val in value:
                 if val._type.startswith('no'):
-                    db_writer.insert_restriction(val)
+                    db_writer.insert_restriction(val, 
+                                                 node_processor.get_node_coordinates())
                     has_explicit_no = True
             
             for val in value:
                 if val._type == 'barrier':
                     if has_explicit_no:
-                        logging.warn(" barrier %s on no_* restriction",(val.via_node,))
-                    db_writer.insert_restriction(val)
+                        logging.warn(" barrier %s on no_* restriction", (val.via_node,))
+                    db_writer.insert_restriction(val, 
+                                                 node_processor.get_node_coordinates())
 
 
     logging.info("restrictions loaded") 
@@ -493,43 +502,44 @@ def run(target_db, file_path, length_projection,
     
 
 if __name__ == '__main__':
+    logging.basicConfig(level=logging.INFO,
+                    format='%(asctime)s %(levelname)-8s %(message)s')
     config = ConfigParser.ConfigParser()
     config.read(['connection.cfg'])
     backup_connection_info = load_connection_info_from_config(config)
-    logging.getLogger().setLevel(logging.INFO)
     
     parser = argparse.ArgumentParser(description=('Load OpenStreetMap dump '
-                                                  +'into pgRouting database.'))
-    parser.add_argument('--file', '-f', type=str, 
+                                                  + 'into pgRouting database.'))
+    parser.add_argument('--file', '-f', type=str,
                         dest='input_file',
                         required=True,
                         help=('OSM dump (either xml or pbf). Loading from pbf '
-                              +'is allowed only if imposm.parser is available '
-                              +'on the system'))    
+                              + 'is allowed only if imposm.parser is available '
+                              + 'on the system'))    
     parser.add_argument('--use-imposm', '-b', dest='use_imposm',
                         action='store_true',
                         help=('Use the imposm.parser for parsing xml files'))    
-    parser.add_argument('--connection-string', '-c', type=str, 
+    parser.add_argument('--connection-string', '-c', type=str,
                         dest='gdal_string', required=False,
-                        help=('GDAL connection string for the database where '+
-                              'the data is to be loaded. If not present, will '+
+                        help=('GDAL connection string for the database where ' + 
+                              'the data is to be loaded. If not present, will ' + 
                               'use info from connection.cfg'))
     parser.add_argument('--clean', '-d', action='store_true',
-                        dest='clean_db', 
-                        help=('Clear all data in the database before '+
+                        dest='clean_db',
+                        help=('Clear all data in the database before ' + 
                               'loading anything from the dump'))
-    parser.add_argument('--prefix-tables', '-p', type=str, 
-                        dest='prefix', default='',required=False,
+    parser.add_argument('--prefix-tables', '-p', type=str,
+                        dest='prefix', default='', required=False,
                         help=('Prefix to use for loaded tables'))
-    parser.add_argument('--lenght-projection', '-e', type=str, 
-                        dest='epsg_code', default='',required=True,
+    parser.add_argument('--lenght-projection', '-e', type=str,
+                        dest='epsg_code', default='', required=True,
                         help=('EPSG of projection to use to compute way length'))
     args = parser.parse_args()
     
     if args.gdal_string is None:
         if backup_connection_info[1]:
             logging.error("GDAL connection string not present and configuration "
-                          +"file is missing the following keywords:"
+                          + "file is missing the following keywords:"
                           + ','.join(backup_connection_info[1]))
             sys.exit(1)
         else:
@@ -539,18 +549,18 @@ if __name__ == '__main__':
         
     if connection_info is None:
         logging.error("Unable to read db connection info. Format should be: "
-                      +"PG:\"dbname='databasename' host='addr' port='5432' "+
-                      +"user='x' password='y'\"")
+                      + "PG:\"dbname='databasename' host='addr' port='5432' " + 
+                      + "user='x' password='y'\"")
         sys.exit(1)
     
-    error=test_connection(connection_info)
+    error = test_connection(connection_info)
     if error is not None:
-        logging.error("Unable to open connection to target db. Exception was: "+
+        logging.error("Unable to open connection to target db. Exception was: " + 
                       error)
         sys.exit(1)
 
     if not exists(args.input_file):
-        logging.error("Input file not found: "+args.input_file)
+        logging.error("Input file not found: " + args.input_file)
         sys.exit(1)
         
     if args.input_file.endswith('.pbf') and not IMPOSM_PRESENT:
@@ -558,7 +568,7 @@ if __name__ == '__main__':
         sys.exit(1)
         
 
-    run(connection_info, args.input_file, 
+    run(connection_info, args.input_file,
         args.epsg_code,
-        use_imposm=args.use_imposm, clean_db=args.clean_db, 
+        use_imposm=args.use_imposm, clean_db=args.clean_db,
         table_prefix=args.prefix)

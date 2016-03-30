@@ -387,7 +387,7 @@ def way_function(way,debug=False):
     has_name = is_not_empty(name)
 
     if has_name and has_ref:
-        result.name = name + " (" + ref + ")"
+        result.name = name + u" (" + ref + u")"
     elif has_ref:
         result.name = ref
     elif has_name:

@@ -14,6 +14,7 @@
     You should have received a copy of the GNU General Public License
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 '''
+import logging
 from util.geom import get_angle_between_points
 from util.tag_utils import pair_as_string
        
@@ -111,11 +112,14 @@ class RoutingRestriction(object):
             if len(self._via_nodes)>0:
                 first_via_node = self.get_first_via_node()
                 if not local_commons.has_key(first_via_node):
-                    print "WARNING:",self._osm_id,"via node declared",first_via_node,"; should be",local_commons.keys()
+                    logging.warn("restriction %s has via node %s; should be %s"%(self._osm_id,
+                                                                          first_via_node,
+                                                                          local_commons.keys()))
                 else:
                     proper_restrictions[first_via_node] = local_commons[first_via_node]
             else:
-                print "WARNING:",self._osm_id,"no via node declared; found",local_commons.keys()
+                logging.warn('restriction %s has no via node ; found %s'%(self._osm_id,
+                                                                  local_commons.keys()))
                 for keye,valz in local_commons.iteritems():
                         proper_restrictions[keye] =valz
         else:
@@ -128,7 +132,7 @@ class RoutingRestriction(object):
                     for common in self.get_common_segments_on_node(ff,tt,self.get_first_via_node()):
                         local_commons.append(common)
             if len(local_commons)>2:
-                print "barrier",common.via_node,"affects more than two segments"
+                logging.warn("barrier %s affects more than two segments"%common.via_node)
                 #for comm in local_commons:
                 #    print comm
                 #print "-----"
@@ -184,6 +188,8 @@ class RoutingRestriction(object):
         commons =[]
         for segm1 in from_.get_segments():
             for segm2 in to_.get_segments():
+                if segm1.get_db_id()==segm2.get_db_id():
+                    continue
                 #print "segmenti",segm1, segm2
                 if segm1.get_head() == segm2.get_head():
                     #print "cap-cap"
@@ -258,8 +264,9 @@ class RoutingRestriction(object):
 
     def add_property(self, key, value):
         if self._properties.has_key(key):
-            print ("WARNING: key", key, "already exists with value",
-                   self._properties[key], ". Will replace with", value)
+            logging.warn("key %s already exists with value %s. Will replace with %s"%(key,
+                                                                                      self._properties[key],
+                                                                                      value))
         self._properties[key] = value
         
     def get_common_ends(self):
@@ -402,10 +409,10 @@ class WaySegment(object):
         return self._db_id
 
     def get_wkt(self,nodes):
-        return ("'LINESTRING(" + pair_as_string(nodes.get(self._head)) + "," + 
+        return ("LINESTRING(" + pair_as_string(nodes.get(self._head)) + "," + 
                    ','.join([pair_as_string(nodes.get(x)) for x in self._mids]) + 
                    ("," if len(self._mids)>0 else "" )+
-                   pair_as_string(nodes.get(self._tail)) + ")'") 
+                   pair_as_string(nodes.get(self._tail)) + ")") 
         
     def get_node_id_near_end(self,end):
         if len(self._mids)>0:

@@ -17,6 +17,7 @@
 import pyproj
 
 from math import atan2, pi
+from psycopg2._psycopg import AsIs
 
 PROJ_WGS_84 = pyproj.Proj(init='EPSG:4326')
 PROJ_MERCATOR = pyproj.Proj(init='EPSG:3857')
@@ -25,14 +26,26 @@ COORDINATE_PRECISION = 1000000.0
 LON = 1
 LAT = 0
 
+class TextGeometry(object):
+    def __init__(self, wkt_string, epsg=4326):
+        self.string_rep = wkt_string
+        self.epsg = epsg
+    
+    @staticmethod                                      
+    def adapter(text_geom):
+        return AsIs("ST_GeomFromText('%s',%s)" % (text_geom.string_rep,
+                                                text_geom.epsg))
+        
+def wkt_point(longitude, latitude):
+    return "POINT(%s %s)"%(longitude, latitude)
 
 def get_angle_between_points(point1, point2, point3): 
 
-    m_point1 = pyproj.transform(PROJ_WGS_84, PROJ_MERCATOR, 
+    m_point1 = pyproj.transform(PROJ_WGS_84, PROJ_MERCATOR,
                                 point1[LON], point1[LAT])
-    m_point2 = pyproj.transform(PROJ_WGS_84, PROJ_MERCATOR, 
+    m_point2 = pyproj.transform(PROJ_WGS_84, PROJ_MERCATOR,
                                 point2[LON], point2[LAT])
-    m_point3 = pyproj.transform(PROJ_WGS_84, PROJ_MERCATOR, 
+    m_point3 = pyproj.transform(PROJ_WGS_84, PROJ_MERCATOR,
                                 point3[LON], point3[LAT])
     
     v1x = (m_point1[LON] - m_point2[LON])  # / COORDINATE_PRECISION
