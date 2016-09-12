@@ -17,6 +17,7 @@
 import psycopg2.extensions
 from psycopg2.extras import DictCursor
 from util.geom import TextGeometry, wkt_point
+import logging
 
 psycopg2.extensions.register_type(psycopg2.extensions.UNICODE)
 psycopg2.extensions.register_type(psycopg2.extensions.UNICODEARRAY)
@@ -118,7 +119,7 @@ class DbWriter(object):
         cursor.execute('CREATE INDEX IF NOT EXISTS {0}ways_geom_idx ON {0}ways USING gist(geom);'.format(self.table_prefix))
         cursor.execute('CREATE INDEX IF NOT EXISTS {0}source_idx ON {0}ways USING btree(source);'.format(self.table_prefix))
         cursor.execute('CREATE INDEX IF NOT EXISTS {0}target_idx ON {0}ways USING btree(target);'.format(self.table_prefix))
-        cursor.execute('CREATE UNIQUE INDEX IF NOT EXISTS {0}ways_gid_idx ON ways USING btree(gid);'.format(self.table_prefix))
+        cursor.execute('CREATE UNIQUE INDEX IF NOT EXISTS {0}ways_gid_idx ON {0}ways USING btree(gid);'.format(self.table_prefix))
         cursor.execute("SELECT pgr_createTopology('{0}ways', 0.00001, 'geom', 'gid');".format(self.table_prefix))
         cursor.close()
 
@@ -235,17 +236,24 @@ class DbWriter(object):
                            ' VALUES {{0}};').format(self.table_prefix))
         # if segment.parent.max_speed<10:
         #   print segment.parent.get_id(),'computed speed',segment.parent.max_speed
-        self.ways_cached_writer.insert_row(
-                                         (segment.get_db_id(),
-                                          segment.get_head(),
-                                          segment.get_tail(),
-                                          segment.parent.f_speed,
-                                          segment.parent.b_speed,
-                                          segment.parent.oneway,
-                                          segment.parent.get_id(),
-                                          segment.idx,
-                                          TextGeometry(segment.get_wkt(nodes))
-                                          ))
+        writable, geometry = segment.get_wkt(nodes)
+        if writable:
+            self.ways_cached_writer.insert_row(
+                                             (segment.get_db_id(),
+                                              segment.get_head(),
+                                              segment.get_tail(),
+                                              segment.parent.f_speed,
+                                              segment.parent.b_speed,
+                                              segment.parent.oneway,
+                                              segment.parent.get_id(),
+                                              segment.idx,
+                                              TextGeometry(geometry)
+                                              ))
+        else:
+            logging.error(("error writing segment %s of way %s: "+
+                           "unable to find nodes %s") % (segment.idx, 
+                                                         segment.parent.get_id(), 
+                                                         geometry))
         
     def insert_node(self, node, geometry):
         if self.nodes_cached_writer is None:

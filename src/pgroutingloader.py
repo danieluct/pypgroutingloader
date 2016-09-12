@@ -106,7 +106,7 @@ class NetworkProcessor(object):
                         
             barrier_cost = self.const.get_barrier_cost(keyval)
             if barrier_cost is None:
-                logging.warn("Unknown barrier value %s for node %s" % (keyval['barrier'], guid))
+                logging.warn("Unknown barrier value '%s' for node %s" % (keyval['barrier'], guid))
                 del keyval
                 return
             
@@ -171,13 +171,13 @@ class NetworkProcessor(object):
                         logging.warn("restriction not applicable %s" % (guid,))
                     elif (actual_restriction == 'no_u_turn' 
                           and len(temp_restriction.get_common_ends()) > 0):
-                        logging.warn("no_u_turn restriction with common from and to %s" % (guid,))
+                        logging.info("no_u_turn restriction %s has common from and to" % (guid,))
                     else:
                         temp_restriction.get_properties()['restriction'] = actual_restriction
                         self.relation_restrictions.set(guid, temp_restriction)
                         return
                 else:
-                    logging.warn("excepted restriction %s; except tag was %s" % (guid, tags['except']))
+                    logging.info("excepted restriction %s; except tag was '%s'" % (guid, tags['except']))
             del temp_restriction
             del members
             del tags
@@ -263,11 +263,11 @@ class NetworkProcessor(object):
                             
                             self.ways.set(guid, way)
                         else:
-                            logging.warn("profile rejected way %s" % (guid,))
+                            logging.info("profile rejected way %s" % (guid,))
                             del way
                         
                 elif access != 'no':
-                    logging.warn("ignoring way %s because actual access is %s" % (guid, access))
+                    logging.warn("ignoring way %s because actual access is '%s'" % (guid, access))
         del nodez
         del tags
     
@@ -314,7 +314,7 @@ class NetworkProcessor(object):
             restriction = self.relation_restrictions[key]
             actually_valid = restriction.validate_ways(self.ways)
             if not actually_valid:
-                logging.warn("deleting restriction relation %s between unroutable ways"
+                logging.info("deleting restriction relation %s between unroutable ways"
                              % (key,))
                 del self.relation_restrictions[key]
           
@@ -323,7 +323,7 @@ class NetworkProcessor(object):
             restriction = self.barrier_restrictions[key]
             actually_valid = restriction.validate_ways(self.ways)
             if not actually_valid:
-                logging.warn("deleting barrier restriction %s on unroutable way(s)"
+                logging.info("deleting barrier restriction %s on unroutable way(s)"
                               % (key,))
                 del self.barrier_restrictions[key]            
 
@@ -401,6 +401,7 @@ def run(target_db, file_path, length_projection,
             root.clear()
         del root, context
     logging.info("%s nodes done read" % (len(node_processor.get_node_coordinates().keys()),))
+    logging.warning("unable to read node info for ids: %s" % list(set(processor.get_used_node_ids()).difference(set(node_processor.get_node_coordinates().keys()))))
 
     db_writer = dbwriter.DbWriter(target_db, table_prefix=table_prefix)
 
@@ -531,7 +532,7 @@ if __name__ == '__main__':
     parser.add_argument('--prefix-tables', '-p', type=str,
                         dest='prefix', default='', required=False,
                         help=('Prefix to use for loaded tables'))
-    parser.add_argument('--lenght-projection', '-e', type=str,
+    parser.add_argument('--length-projection', '-e', type=str,
                         dest='epsg_code', default='', required=True,
                         help=('EPSG of projection to use to compute way length'))
     args = parser.parse_args()

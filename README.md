@@ -7,7 +7,7 @@ pypgroutingloader is a Python package for loading an OpenStreetMap dump into a p
 ```
 pgroutingloader.py [-h] --file INPUT_FILE [--use-imposm]
                           [--connection-string GDAL_STRING] [--clean]
-                          [--prefix-tables PREFIX] --lenght-projection EPSG_CODE
+                          [--prefix-tables PREFIX] --length-projection EPSG_CODE
                           
 
 
@@ -30,7 +30,7 @@ optional arguments:
                         from the dump
   --prefix-tables PREFIX, -p PREFIX
                         Prefix to use for loaded tables
-  --lenght-projection EPSG_CODE, -e EPSG_CODE
+  --length-projection EPSG_CODE, -e EPSG_CODE
                         EPSG of projection to use to compute way length
 
 ```

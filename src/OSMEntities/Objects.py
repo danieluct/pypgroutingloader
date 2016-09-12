@@ -409,7 +409,17 @@ class WaySegment(object):
         return self._db_id
 
     def get_wkt(self,nodes):
-        return ("LINESTRING(" + pair_as_string(nodes.get(self._head)) + "," + 
+        unknown =[]
+        if nodes.get(self._head) is None:
+            unknown.append(self._head)
+        if nodes.get(self._tail) is None:
+            unknown.append(self._tail)
+        for x in self._mids:
+            if nodes.get(x) is None:
+                unknown.append(x)
+        if len(unknown)>0:
+            return False,unknown 
+        return True,("LINESTRING(" + pair_as_string(nodes.get(self._head)) + "," + 
                    ','.join([pair_as_string(nodes.get(x)) for x in self._mids]) + 
                    ("," if len(self._mids)>0 else "" )+
                    pair_as_string(nodes.get(self._tail)) + ")") 
@@ -422,3 +432,6 @@ class WaySegment(object):
                 return self.get_tail()
             else:
                 return self.get_head()
+            
+    def __str__(self, *args, **kwargs):
+        return ({self.idx: [self._head]+self._mids+[self._tail]}).__str__(*args, **kwargs)
